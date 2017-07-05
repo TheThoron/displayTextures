@@ -36,21 +36,15 @@ var sankey = d3.sankey()
 
 var path = sankey.link();
 var root;
+var flattenRoot;
 var nodeMap;
 
 //lecture du .json dans la variable json
 d3.json("flowered_wall_1k.json", function(error, json) {
   if (error) throw error;
   root = json;
-  update();
-});
+  flattenRoot = flatten(root);
 
-//boucle principale
-function update() {
-  var g = d3.select("g");
-  g.selectAll("*").remove();
-  var node2 = flatten(root),
-  links2 = d3.layout.tree().links(node2);
   // Returns a list of all nodes under the root.
   function flatten(root) {
     var nodes = [], i = 0;
@@ -62,10 +56,10 @@ function update() {
       else
         node._value = node.value;
 
-      if(root.filterEnable == 1)
+      /*if(root.filterEnable == 1)
       {
         filter = filterChildren(node, filter);
-      }
+      }*/
       node.percent = node.value*percent;
       if (node.children)
       {
@@ -78,11 +72,19 @@ function update() {
     recurse(root, filter, 1.0);
     return nodes;
   }
+  update();
+});
+
+//boucle principale
+function update() {
+  var g = d3.select("g");
+  g.selectAll("*").remove();
+  var node2 = flattenRoot,
+  links2 = d3.layout.tree().links(node2);
 
   //préparation des noeuds et liens de l'affichage
-  node2.forEach(function(d, i) { d.name = d.id;});
   links2.forEach(function(d, i) {
-  d.value = (display == 1) ? d.target.percent : d.target.value;
+  d.value = (display == 1) ? d.target.percent : d.target._value;
   d.target = d.target.id;
   d.source = d.source.id;});
 
@@ -119,15 +121,26 @@ function update() {
   nodeMap = {};
   //on enleve les noeuds doublé de l'affichage.
   node2.forEach(function(x) {
-   if(!nodeMap[x.name])
+   if(!nodeMap[x.id])
    {
     x.totalValue = x.value;
-    nodeMap[x.name] = x;
+    nodeMap[x.id] = x;
+    if(x.children)
+      nodeMap[x.id]._children = x.children;
+    if(x.filter != 1)
+        nodeMap[x.id].filter = 0;
   }
   else
   {
-    nodeMap[x.name].filter = Math.max(nodeMap[x.name].filter, x.filter);
-    nodeMap[x.name].totalValue += x.value;
+    if(nodeMap[x.id]._children)
+      nodeMap[x.id]._children.concat(x.children);    
+    console.log(nodeMap[x.id]._children);
+    console.log(x);
+    if(x.filter == 1)
+      nodeMap[x.id].filter = x.filter;
+    else if(nodeMap[x.id].filter != 1)
+        nodeMap[x.id].filter = 0;
+    nodeMap[x.id].totalValue += x.value;
     index = graph.nodes.indexOf(x);
     graph.nodes.splice(index, 1);
   }});
@@ -163,46 +176,65 @@ function update() {
   .links(graph.links)
   .layout(0);
 
-//affichage des liens
-var link = svg.append("g").selectAll(".link")
-.data(graph.links)
-.enter().append("path")
-.attr("class", "link")
-.attr("d", path)
-.style("stroke-width", function(d) { return Math.max(1, d.dy); })
-.style("stroke-opacity", function(d) { return opacityColor(d); })
-.on("mouseover", function () {d3.select(this).style("stroke-opacity", 0.15); })
-.on("mouseout", function() { d3.select(this).style("stroke-opacity", function(d) { return opacityColor(d); }); })
-.sort(function(a, b) { return b.dy - a.dy; });
+  //application des filtres sur les noeuds
+  filter();
+  function filter() {
+    var filter = false;
+    var filterFound = false;
+    function recurse(node, filter)
+    {
+      if(root.filterEnable == 1)
+      {
+        filter = filterChildren(node, filter);
+      }
+      if (node.children)
+      {
+        node.children.forEach(function(d, i) { recurse(d, filter); });
+      }
+    }
+    recurse(root, filter);
+  }  
 
-//opacitée des liens
-function opacityColor(d) {
-  if (root.filterEnable)
-    if (d.target.filter == 0 || d.source.filter == 0)
-      return 0.04;
-  return 0.3;}
+  //affichage des liens
+  var link = svg.append("g").selectAll(".link")
+  .data(graph.links)
+  .enter().append("path")
+  .attr("class", "link")
+  .attr("d", path)
+  .style("stroke-width", function(d) { return Math.max(1, d.dy); })
+  .style("stroke-opacity", function(d) { return opacityColor(d); })
+  .on("mouseover", function () {d3.select(this).style("stroke-opacity", 0.15); })
+  .on("mouseout", function() { d3.select(this).style("stroke-opacity", function(d) { return opacityColor(d); }); })
+  .sort(function(a, b) { return b.dy - a.dy; });
 
-// add the link titles
-link.append("title")
-.text(function(d) {
-  return d.source.name + " → " + 
-  d.target.name + "\n" + format(d.value); });
+  //opacitée des liens
+  function opacityColor(d) {
+    if (root.filterEnable)
+      if (nodeMap[d.target.id].filter == 0 || nodeMap[d.source.id].filter == 0)
+        return 0.04;
+    return 0.3;}
 
-//affichage des noeuds
-var node = svg.append("g").selectAll(".node")
-.data(graph.nodes)
-.enter().append("g")
-.attr("class", "node")
-.attr("transform", function(d) { 
-  return "translate(" + d.x + "," + d.y + ")"; })
-.call(d3.behavior.drag()
-  .origin(function(d) { return d; })
-  .on("dragstart", function() { 
-    this.parentNode.appendChild(this); })
-  .on("drag", dragmove))
-.on("click", click);
+  // add the link titles
+  link.append("title")
+  .text(function(d) {
+    return d.source.id + " → " + 
+    d.target.id + "\n" + format(d.value); });
 
-var defs = node.append('svg:defs');
+  //affichage des noeuds
+  var node = svg.append("g").selectAll(".node")
+  .data(graph.nodes)
+  .enter().append("g")
+  .attr("class", "node")
+  .attr("transform", function(d) { 
+    return "translate(" + d.x + "," + d.y + ")"; })
+  .call(d3.behavior.drag()
+    .origin(function(d) { return d; })
+    .on("dragstart", function() { 
+      this.parentNode.appendChild(this); })
+    .on("drag", dragmove))
+  .on("click", click);
+
+  var defs = node.append('svg:defs');
 
   //on prépare l'image avec un 'ID' = id du noeud
   var images = defs.append("pattern")
@@ -228,22 +260,22 @@ var defs = node.append('svg:defs');
   .style("fill", function(d) { return "url(#"+d.id+")"; })
   .style("opacity", function(d) {
     if (root.filterEnable)
-      if (d.filter == 0)
+      if (nodeMap[d.id].filter == 0)
         return 0.1;
       return 1;})
   .style("stroke", function(d) {
     if (root.filterEnable)
-      if (d.filter != 0)
+      if (nodeMap[d.id].filter != 0)
         return 'black';
       return ("#"+d.color); })
   .style("stroke-opacity", function(d) {
     if (root.filterEnable)
-      if (d.filter == 0)
+      if (nodeMap[d.id].filter == 0)
         return 0.1;
       return 1;})
   .append("title")
   .text(function(d) { 
-    return d.name + "\n" + format(d.value); });
+    return d.id + "\n" + format(d.value); });
 
   // add in the title for the nodes
   node.append("text")
@@ -252,7 +284,7 @@ var defs = node.append('svg:defs');
   .attr("dy", ".35em")
   .attr("text-anchor", "end")
   .attr("transform", null)
-  .text(function(d) { return d.name; })
+  .text(function(d) { return d.id; })
   .filter(function(d) { return d.x < width / 2; })
   .attr("x", 6 + sankey.nodeWidth())
   .attr("text-anchor", "start");
@@ -272,7 +304,6 @@ var defs = node.append('svg:defs');
 
 function click(d) {
   if (d3.event.defaultPrevented) return; // ignore drag
-  target = d;
   if(d.filter == 2)
   {
     root.filterEnable = 0;
@@ -318,14 +349,13 @@ var circle = svgContainer.append("rect")
         child.children.forEach(function(d, i) { aux(d); });
   }
   aux(node);
-  console.log(rect);
-    /*var svgContainer = d3.select("svg");
+  var svgContainer = d3.select("svg");
 var circle = svgContainer.append("rect")
 .attr("x", rect[0])
 .attr("y", rect[1])
 .attr("width", rect[2]-rect[0])
 .attr("height", rect[3]-rect[1])
-.attr("opacity", 0.05);*/
+.attr("opacity", 0.05);
   var zoom = [(rect[2] + rect[0])/2,
               (rect[3] + rect[1])/2,
               Math.max(rect[2]-rect[0] + (margin.left + margin.right)/2, rect[3]-rect[1] + (margin.top + margin.bottom)/2)];
@@ -356,13 +386,13 @@ function transition(svg, end) {
 function filterChildren(node, filter)
 {
   if(filter)
-    node.filter = 3;
-  else if(node.filter == 1)
   {
-    node.filter = 2;
+    nodeMap[node.id].filter = 3;
+  }
+  else if(nodeMap[node.id].filter == 1 || nodeMap[node.id].filter == 2)
+  {
+    nodeMap[node.id].filter = 2;
     return true;
   }
-  else
-    node.filter = 0;
   return filter;
 }
