@@ -308,7 +308,9 @@ function update() {
     if (nodeMap[d.target.id].linkColor == colorEnum.BASE
               || nodeMap[d.source.id].linkColor == colorEnum.BASE)
       return colorEnum.BASE;
-    return colorEnum.PATH;
+    if(nodeMap[d.target.id].linkColor == colorEnum.PATH)
+      return nodeMap[d.source.id].linkColor;
+    return nodeMap[d.target.id].linkColor;
   }
 
   //opacitée des liens
