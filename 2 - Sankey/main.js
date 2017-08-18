@@ -52,8 +52,8 @@ var baseOpacityNode = 1;
 var opacityFilteredLink = 0.2;
 var opacityFilteredNode = 0.15;
 var baseStrokeWidth = "1px";
-var filteredStrokeWidth = "3px";
-var overStrokeWidth = "10px";
+var filteredStrokeWidth = "2px";
+var overStrokeWidth = "7px";
 
 //paramètre de base.
 var units = "Widgets";
@@ -83,8 +83,8 @@ var svg = d3.select("#chart").append("svg")
 //gestion du click en arrière plan
 var backgroundClick = true;
 d3.select("svg").on('click', function() {
-    if(backgroundClick)
-    {
+    if(backgroundClick){
+      selectedNode = [];
       root.filterEnable = filterEnum.NO_FILTER;
       if(lastZoom)
         currentScreen = lastZoom;
@@ -95,8 +95,8 @@ d3.select("svg").on('click', function() {
     backgroundClick = true;
   });
 
-//gestions du click droit (right click)
-var selectedNode = false;
+//gestions du ctrl + click
+var selectedNode = [];
 
 //Set the sankey diagram properties
 //Elles peuvents être modifiée automatiquement pour rendre le diagramme lisible
@@ -427,6 +427,8 @@ function update() {
   .style("stroke", function(d) { return ("#"+d.color); })
   .style("stroke-width", function(d) {
     if (root.filterEnable)
+      if (nodeMap[d.id].linkColor == colorEnum.SELECTED)
+        return overStrokeWidth;
       if (nodeMap[d.id].filter != filterEnum.NO_FILTER)
         return filteredStrokeWidth;
       return baseStrokeWidth; })
@@ -543,8 +545,8 @@ function update() {
   }
 }
 
-function click(d) {  
-  selectedNode = false;
+function click(d) {
+  selectedNode = [];
   backgroundClick = false; //ignore le click background
   if (d3.event.defaultPrevented) return; // ignore drag
 
@@ -561,32 +563,39 @@ function click(d) {
 function ctrlClick(d) {
   backgroundClick = false;
   d3.event.preventDefault();
-  if(selectedNode && selectedNode != d)
-  {
-    console.log(d);
-    filterctrlClick(d, selectedNode);
-    console.log(d);
-    console.log(colorEnum.SELECTED);
-    selectedNode = d;
-  }
+
+  //on enleve un noeud déjà sélectionné ou on rajoute un nouveau noeud
+  index = selectedNode.indexOf(d.id);
+  if(index != -1)
+    selectedNode.splice(index, 1);
   else
+    selectedNode.push(d.id);
+
+  if(selectedNode.length)
   {
+    //on enlève tout les filtres
+    for (var key in nodeMap)
+      if (nodeMap.hasOwnProperty(key)){
+        nodeMap[key].filter = filterEnum.NO_FILTER;
+        nodeMap[key].linkColor = colorEnum.BASE;
+      }
     root.filterEnable = filterEnum.NODE_MULTISELECTION;
-    selectedNode = d;
-    d.filter = filterEnum.NODE_MULTISELECTION;
+    selectedNode.forEach(function(x, i) {
+      nodeMap[x].filter = filterEnum.NODE_MULTISELECTION;
+      selectedNode.forEach(function(y, j) {
+        if(i < j)
+          filterctrlClick(nodeMap[x], nodeMap[y]);
+      })
+    });
+    selectedNode.forEach(function(x) { nodeMap[x].linkColor = colorEnum.SELECTED;});
   }
   update();
 }
 
 function filterctrlClick(n1, n2)
 {
-  root.filterEnable = filterEnum.NODE_MULTISELECTION;
-  n1.filter = filterEnum.NODE_MULTISELECTION;
-  n2.filter = filterEnum.NODE_MULTISELECTION;
-
   var parentsN1 = getParents(n1);
   var parentsN2 = getParents(n2);
-
   var childrenN1 = getChildren(n1);
   var childrenN2 = getChildren(n2);
 
@@ -594,8 +603,12 @@ function filterctrlClick(n1, n2)
     parentsN2.forEach(function(id2) {
       if (id1 == id2)
       {
-        nodeMap[id1].filter = filterEnum.NODE_MULTISELECTION;
-        nodeMap[id1].linkColor = colorEnum.PARENT;
+        currentNode = nodeMap[id1];
+        currentNode.filter = filterEnum.NODE_MULTISELECTION;
+        if(currentNode.linkColor == colorEnum.CHILD || currentNode.linkColor == colorEnum.PATH)
+          currentNode.linkColor = colorEnum.PATH;
+        else
+          currentNode.linkColor = colorEnum.PARENT;
       }
     });
   });
@@ -604,8 +617,12 @@ function filterctrlClick(n1, n2)
     childrenN2.forEach(function(id2) {
       if (id1 == id2)
       {
-        nodeMap[id1].filter = filterEnum.NODE_MULTISELECTION;
-        nodeMap[id1].linkColor = colorEnum.CHILD;
+        currentNode = nodeMap[id1];
+        currentNode.filter = filterEnum.NODE_MULTISELECTION;
+        if(currentNode.linkColor == colorEnum.PARENT || currentNode.linkColor == colorEnum.PATH)
+          currentNode.linkColor = colorEnum.PATH;
+        else
+          currentNode.linkColor = colorEnum.CHILD;
       }
     });
   });
@@ -616,7 +633,7 @@ function filterctrlClick(n1, n2)
         if (id1 == id2)
         {
           nodeMap[id1].filter = filterEnum.NODE_MULTISELECTION;
-        nodeMap[id1].linkColor = colorEnum.PATH;
+          nodeMap[id1].linkColor = colorEnum.PATH;
         }
       });
     });
@@ -630,9 +647,6 @@ function filterctrlClick(n1, n2)
       });
     });
   }
-  //on met leurs couleur après car ils peuvent être dans getChildren/getParents
-  n1.linkColor = colorEnum.SELECTED;
-  n2.linkColor = colorEnum.SELECTED;
 }
 
 //calcule le rectangle de zoom pour un noeud
